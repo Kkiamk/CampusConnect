@@ -24,6 +24,24 @@
     input === portalPass ? document.querySelector('#pwd_tip') : null;
   const available = input => editable(input) && (visible(input) ||
     (portalButton && visible(tipFor(input))));
+  // Find the captcha image — prefers data: URIs common in recent captive portals,
+  // falls back to small visible images labelled captcha/验证码 near the form.
+  const findCaptchaImage = scope => {
+    const root = scope || document;
+    let best = null, score = 0;
+    for (const img of root.querySelectorAll('img')) {
+      if (!img.src) continue;
+      let s = 0;
+      if (img.src.startsWith('data:image/')) s += 100;
+      const w = img.naturalWidth || img.width || 0, h = img.naturalHeight || img.height || 0;
+      if (w > 0 && h > 0 && w <= 300 && h >= 15 && h <= 150) s += 30;
+      const txt = [img.alt, img.title, img.id, img.className, img.getAttribute?.('name'), img.placeholder].join(' ').toLowerCase();
+      if (/(captcha|验证码|校验|验证|security|rand|pic|check)/.test(txt)) s += 40;
+      if (img.src.length > 2000) s += 20;
+      if (s > score) { score = s; best = img; }
+    }
+    return best ? best.src : null;
+  };
   try {
     // Ruijie ePortal displays readonly tips over hidden real inputs. Its login
     // control is an image-only anchor, so text/button heuristics cannot find it.
@@ -202,10 +220,14 @@
   if (portalButton && /doauthen/.test(submit.getAttribute('onclick') || '') &&
       typeof window.doauthen !== 'function') return 'waiting-ready';
   // Captchas and extra operator fields need the user's input; don't burn a login attempt.
+  // Report captcha image back so the host UI can render it next to the input.
   if (portalButton && ['#validCode','#operatorUserId','#operatorPwd'].some(selector => {
     const input = document.querySelector(selector);
     return visible(input) && !input.value.trim();
-  })) return 'manual-required';
+  })) {
+    const captcha = findCaptchaImage(pass.form || document);
+    return captcha ? JSON.stringify({status:'manual-required', captcha}) : 'manual-required';
+  }
   // WKWebView can finish filling before the page handles its first activation.
   // Observe only the known school's own login flow; never call its API ourselves.
   if (cfg.confirmSubmit && submit === portalButton && /doauthen/.test(submit.getAttribute('onclick') || '')) {

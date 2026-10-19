@@ -11,8 +11,10 @@ internal sealed class PortalController
     public event Action? Submitted;
     public event Action? AddressChanged;
     public event Action<bool>? ProcessFailed;
+    public event Action<string?>? CaptchaDetected;
     public bool IsActive { get; private set; }
     public bool RequiresInteraction { get; private set; }
+    public string? CaptchaData { get; private set; }
     public bool IsAuthenticating => authenticationDeadline != null || (!finished && !RequiresInteraction && fillingGeneration == generation);
     public string Address {
         get {
@@ -108,6 +110,7 @@ internal sealed class PortalController
     {
         internetConfirmed = true; RequiresInteraction = false;
         authenticationDeadline = null; finished = true; password = "";
+        ResetCaptcha();
         Status?.Invoke("已经连接成功");
     }
     public void ReportInternetUnavailable() { internetConfirmed = false; Status?.Invoke("未连接网络"); }
@@ -129,6 +132,7 @@ internal sealed class PortalController
         // Never re-submit a login/captcha just because the UI browser was restarted.
         RequiresInteraction = true;
         initialization = null; bootstrapId = null; fillingGeneration = -1;
+        ResetCaptcha();
         var oldView = View;
         View = new() { Dock = DockStyle.Fill };
         oldView.Dispose();
@@ -138,12 +142,17 @@ internal sealed class PortalController
         generation++;
         profile = null; password = ""; finished = false; authenticationDeadline = null; authenticationConfirmed = false; internetConfirmed = false;
         IsActive = false; RequiresInteraction = false;
+        ResetCaptcha();
         try {
             if (View.CoreWebView2 is not null) {
                 View.CoreWebView2.Stop();
                 if (clearView) View.CoreWebView2.Navigate("about:blank");
             }
         } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { }
+    }
+    private void ResetCaptcha()
+    {
+        if (CaptchaData is not null) { CaptchaData = null; CaptchaDetected?.Invoke(null); }
     }
     private async Task<bool> CheckAuthenticationPageAsync()
     {
@@ -165,6 +174,7 @@ internal sealed class PortalController
         if (authenticationConfirmed) return;
         authenticationConfirmed = true; authenticationDeadline = null;
         finished = true; password = ""; RequiresInteraction = false;
+        ResetCaptcha();
         if (!internetConfirmed) Status?.Invoke("学校已确认登录成功，正在检查实际联网状态。");
         Submitted?.Invoke();
     }
@@ -224,9 +234,20 @@ internal sealed class PortalController
             if (profile.Username.Length == 0 || password.Length == 0) {
                 RequiresInteraction = true; Status?.Invoke("请在设置中填写上网账号密码，或直接在网页中手动登录。"); return;
             }
-            var result = JsonSerializer.Deserialize<string>(await View.CoreWebView2.ExecuteScriptAsync(PortalScript.Build(profile, password)));
+            var raw = JsonSerializer.Deserialize<string>(await View.CoreWebView2.ExecuteScriptAsync(PortalScript.Build(profile, password)));
             if (expected != generation) return;
-            switch (result) {
+            var status = raw;
+            string? captcha = null;
+            try {
+                // JS may return JSON like {"status":"manual-required","captcha":"data:image/..."}
+                using var doc = JsonDocument.Parse(raw);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("status", out var st)) {
+                    status = st.GetString();
+                    if (doc.RootElement.TryGetProperty("captcha", out var cp)) captcha = cp.GetString();
+                }
+            } catch { /* keep raw as plain status */ }
+            if (captcha != CaptchaData) { CaptchaData = captcha; CaptchaDetected?.Invoke(captcha); }
+            switch (status) {
                 case "authenticated":
                     ConfirmAuthentication(); return;
                 case "authentication-rejected":

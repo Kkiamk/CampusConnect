@@ -733,6 +733,26 @@ struct PortalPage: View {
                 if portal.loading { ProgressView().controlSize(.small) }
             }
             Text(portal.message).font(.system(size: 12)).foregroundStyle(.secondary)
+            if let captcha = portal.captcha,
+               let comma = captcha.firstIndex(of: ","),
+               let data = Data(base64Encoded: captcha[captcha.index(after: comma)...]),
+               let nsImage = NSImage(data: data) {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(nsImage: nsImage).resizable().aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: 160, maxHeight: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.1)))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("学校要求验证码").font(.system(size: 12, weight: .semibold))
+                        Text("对照图片，在下方认证页中填写验证码后登录。").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("换一张") { model.openPortal() }.controlSize(.small)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.1)))
+            }
             if !portal.address.isEmpty {
                 HStack {
                     Text(portal.address).font(.system(size: 11, design: .monospaced)).lineLimit(1).textSelection(.disabled)

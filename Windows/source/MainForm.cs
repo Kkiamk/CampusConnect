@@ -80,6 +80,7 @@ internal sealed partial class MainForm : Form
             await Task.Delay(1000);
             if (!IsDisposed && expected == generation) await SafeAsync(() => CheckInternetAsync(false));
         };
+        portal.CaptchaDetected += captchaUrl => PushState();
         timer.Tick += async (_, _) => await RefreshAsync(scan: currentSsid != saved.Ssid);
         InitializeBrowserRecovery();
         Activated += (_, _) => { if (uiReady) PushStartup(); };
@@ -211,6 +212,7 @@ internal sealed partial class MainForm : Form
             case "openPortal": await OpenPortalAsync(); break;
             case "discoverPortal": await OpenPortalAsync(discover: true); break;
             case "stopPortal": StopAuthentication(); portalStatus = "认证已暂停。"; PushState(); UpdatePortalVisibility(); break;
+            case "refreshCaptcha": await OpenPortalAsync(); break;
             case "checkInternet": await CheckInternetAsync(false); break;
             case "adoptAddress":
                 var url = portal.Address;
@@ -293,7 +295,7 @@ internal sealed partial class MainForm : Form
             wiredAuth = saved.WiredAuth, connectionLabel = saved.ConnectionLabel, webPortalEnabled = saved.UsesWebPortal,
             ethernetAdapters, broadbandEntries,
             automatic = saved.Automatic, busy, permissionNeeded, lastScan, status,
-            portalStatus, portalAddress = portal.Address,
+            portalStatus, portalAddress = portal.Address, captcha = portal.CaptchaData,
             networks = networks.DistinctBy(n => n.Ssid).Select(n => new { n.Ssid, n.Signal, n.Secure }).ToArray()
         }});
     }

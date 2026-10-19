@@ -8,6 +8,7 @@ final class PortalController: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var message = "连接校园网后，在这里完成上网认证。"
     @Published var address = ""
     @Published var loading = false
+    @Published var captcha: String? = nil
     var requiresInteraction = false
     var isAuthenticating: Bool { authenticationDeadline != nil || (!submitted && !filled && !requiresInteraction && fillingGeneration == generation) }
     var onSubmission: (() -> Void)?
@@ -52,6 +53,7 @@ final class PortalController: NSObject, ObservableObject, WKNavigationDelegate {
     private func load(profile: CampusProfile, password: String, discoveryHost: String?) {
         requiresInteraction = !profile.autoSubmit
         submitted = false; filled = false; authenticationDeadline = nil; authenticationConfirmed = false; internetConfirmed = false
+        captcha = nil
         self.profile = profile; self.password = password
         let url = profile.validPortalURL ?? URL(string: "http://captive.apple.com/hotspot-detect.html")!
         webView.configuration.userContentController.removeAllUserScripts()
@@ -87,6 +89,7 @@ final class PortalController: NSObject, ObservableObject, WKNavigationDelegate {
     func stop() {
         generation += 1
         profile = nil; password = ""; submitted = false; filled = false; requiresInteraction = false; authenticationDeadline = nil; authenticationConfirmed = false; internetConfirmed = false
+        captcha = nil
         webView.stopLoading(); loading = false
         campusProxy.stop()
         message = "认证已暂停。"
@@ -134,6 +137,7 @@ final class PortalController: NSObject, ObservableObject, WKNavigationDelegate {
     func confirmInternetAccess() {
         internetConfirmed = true; requiresInteraction = false
         authenticationDeadline = nil; submitted = true; filled = true; password = ""
+        captcha = nil
         message = "已经连接成功"
     }
     func reportInternetUnavailable() { internetConfirmed = false; message = "未连接网络" }
@@ -141,6 +145,7 @@ final class PortalController: NSObject, ObservableObject, WKNavigationDelegate {
         guard !authenticationConfirmed else { return }
         authenticationConfirmed = true; authenticationDeadline = nil
         submitted = true; filled = true; password = ""; requiresInteraction = false
+        captcha = nil
         if !internetConfirmed { message = "学校已确认登录成功，正在检查实际联网状态。" }
         onAuthentication?()
     }
@@ -195,7 +200,17 @@ final class PortalController: NSObject, ObservableObject, WKNavigationDelegate {
             let script = try PortalScript.build(profile: profile, password: password)
             webView.evaluateJavaScript(script) { [weak self] result, error in
                 guard let self, expected == self.generation else { return }
-                let status = result as? String
+                var status = result as? String
+                // The script may return JSON like {"status":"manual-required","captcha":"data:image/..."}.
+                if let raw = status, let data = raw.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let st = json["status"] as? String {
+                    status = st
+                    let cp = json["captcha"] as? String
+                    if cp != self.captcha { self.captcha = cp }
+                } else if self.captcha != nil {
+                    self.captcha = nil
+                }
                 if PortalFillRetry.shouldRetry(result: status, scriptFailed: error != nil, attempt: attempt) {
                     self.message = status == "waiting-agreement" ? "正在等待网页确认必选框和协议项…" : status == "waiting-submit" ? "账号密码已填写，正在等待学校页面处理登录…" : "正在等待认证页面就绪…"
                     DispatchQueue.main.asyncAfter(deadline: .now() + PortalFillRetry.delay) { [weak self] in
