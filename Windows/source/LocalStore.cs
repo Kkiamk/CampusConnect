@@ -6,7 +6,7 @@ namespace CampusConnect;
 
 internal static class LocalStore
 {
-    public static string DirectoryPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CampusConnect");
+    public static string DirectoryPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppIdentity.Name);
     private static string FilePath => Path.Combine(DirectoryPath, "configuration.json");
     private sealed record Configuration(CampusProfile Profile, string ProtectedPassword);
     public static (CampusProfile Profile, string Password) Load()

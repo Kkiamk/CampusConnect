@@ -6,7 +6,7 @@ internal static class Program
     static void Main(string[] args)
     {
         var startInTray = args.Contains("--startup", StringComparer.OrdinalIgnoreCase);
-        using var instance = new Mutex(true, "Local\\CampusConnect.Windows", out var created);
+        using var instance = new Mutex(true, AppIdentity.MutexName, out var created);
         if (!created) { if (!startInTray) MessageBox.Show("校园网助手已在运行，请从系统托盘打开。", "校园网助手"); return; }
         // The .NET bundle extracts native libraries into its private cache.
         // Tell WebView2 where its loader is instead of relying on Assembly.Location.
